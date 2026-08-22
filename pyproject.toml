@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agenteval"
+version = "0.1.0"
+description = "Minimal LLM/Agent evaluation framework (extracted from deepeval)"
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=2",
+    "openai",
+    "jinja2",
+    "nest_asyncio",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+anthropic = ["anthropic"]
+litellm = ["litellm"]
+
+[tool.setuptools.packages.find]
+include = ["agenteval*"]
+
+[tool.setuptools.package-data]
+agenteval = ["templates/metrics/templates.json"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
