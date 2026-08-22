@@ -34,9 +34,6 @@ def test_check_if_multimodal():
     assert check_if_multimodal("img [DEEPEVAL:IMAGE:url] end") is True
 
 
-import pytest
-
-@pytest.mark.skip(reason="needs MLLMImage.parse_multimodal_string from Task 3")
 def test_convert_to_multi_modal_array_plain_string():
     from agenteval.utils import convert_to_multi_modal_array
     arr = convert_to_multi_modal_array("plain text")
