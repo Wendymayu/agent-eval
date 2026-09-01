@@ -42,6 +42,7 @@ MetricTemplateMethod = Literal[
     "generate_perceptual_quality_evaluation_results",
     "generate_questions",
     "generate_reason",
+    "generate_relevance_score",
     "generate_semantic_consistency_evaluation_results",
     "generate_statements",
     "generate_strict_evaluation_results",
