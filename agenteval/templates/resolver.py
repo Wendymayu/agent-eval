@@ -28,6 +28,7 @@ MetricTemplateMethod = Literal[
     "extract_task_from_trace",
     "extract_user_intentions",
     "generate_advices",
+    "generate_ai_tone_score",
     "generate_alignment_verdicts",
     "generate_answers",
     "generate_arena_winner",

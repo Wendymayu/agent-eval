@@ -15,6 +15,7 @@ from agenteval.metrics import (
     GEval,
     ExactMatchMetric,
     AnswerRelevanceMetric,
+    AIToneMetric,
 )
 from agenteval.models import DeepEvalBaseLLM, EvaluationCost
 from agenteval.models.llms import OpenAIModel
@@ -37,6 +38,7 @@ __all__ = [
     "GEval",
     "ExactMatchMetric",
     "AnswerRelevanceMetric",
+    "AIToneMetric",
     "DeepEvalBaseLLM",
     "EvaluationCost",
     "OpenAIModel",
