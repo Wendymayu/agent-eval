@@ -1,7 +1,7 @@
 from typing import List, Optional, Union
 
 from agenteval.evaluate.configs import AsyncConfig, ErrorConfig
-from agenteval.evaluate.execute import execute_test_cases, a_execute_test_cases
+from agenteval.evaluate.execute import execute_test_cases
 from agenteval.evaluate.types import EvaluationResult
 from agenteval.evaluate.utils import (
     check_valid_test_cases_type,
@@ -32,20 +32,15 @@ def evaluate(
     validate_evaluate_inputs(test_cases, metrics)
     check_at_least_one_metric_has_threshold(metrics)
 
-    if async_config.run_async:
-        loop = get_or_create_event_loop()
-        test_results = loop.run_until_complete(
-            a_execute_test_cases(
-                test_cases,
-                metrics,
-                async_config=async_config,
-                error_config=error_config,
-            )
+    loop = get_or_create_event_loop()
+    test_results = loop.run_until_complete(
+        execute_test_cases(
+            test_cases,
+            metrics,
+            async_config=async_config,
+            error_config=error_config,
         )
-    else:
-        test_results = execute_test_cases(
-            test_cases, metrics, error_config=error_config
-        )
+    )
 
     return EvaluationResult(
         test_results=test_results,

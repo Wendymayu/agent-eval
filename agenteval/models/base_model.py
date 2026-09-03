@@ -61,17 +61,8 @@ class DeepEvalBaseLLM(ABC):
         pass
 
     @abstractmethod
-    def generate(self, *args, **kwargs) -> str:
-        """Runs the model to output LLM response.
-
-        Returns:
-            A string.
-        """
-        pass
-
-    @abstractmethod
-    async def a_generate(self, *args, **kwargs) -> str:
-        """Runs the model to output LLM response.
+    async def generate(self, *args, **kwargs) -> str:
+        """Runs the model to output an LLM response (async).
 
         Returns:
             A string.
@@ -108,21 +99,13 @@ class DeepEvalBaseLLM(ABC):
     def supports_json_mode(self) -> Union[bool, None]:
         return None
 
-    def generate_with_schema(self, *args, schema=None, **kwargs):
+    async def generate_with_schema(self, *args, schema=None, **kwargs):
         if schema is not None:
             try:
-                return self.generate(*args, schema=schema, **kwargs)
+                return await self.generate(*args, schema=schema, **kwargs)
             except TypeError:
                 pass  # this means provider doesn't accept schema kwarg
-        return self.generate(*args, **kwargs)
-
-    async def a_generate_with_schema(self, *args, schema=None, **kwargs):
-        if schema is not None:
-            try:
-                return await self.a_generate(*args, schema=schema, **kwargs)
-            except TypeError:
-                pass
-        return await self.a_generate(*args, **kwargs)
+        return await self.generate(*args, **kwargs)
 
 
 class DeepEvalBaseEmbeddingModel(ABC):
@@ -140,39 +123,13 @@ class DeepEvalBaseEmbeddingModel(ABC):
         pass
 
     @abstractmethod
-    def embed_text(self, *args, **kwargs) -> List[float]:
-        """Runs the model to generate text embeddings.
-
-        Returns:
-            A list of float.
-        """
+    async def embed_text(self, *args, **kwargs) -> List[float]:
+        """Runs the model to generate text embeddings (async)."""
         pass
 
     @abstractmethod
-    async def a_embed_text(self, *args, **kwargs) -> List[float]:
-        """Runs the model to generate text embeddings.
-
-        Returns:
-            A list of list of float.
-        """
-        pass
-
-    @abstractmethod
-    def embed_texts(self, *args, **kwargs) -> List[List[float]]:
-        """Runs the model to generate list of text embeddings.
-
-        Returns:
-            A list of float.
-        """
-        pass
-
-    @abstractmethod
-    async def a_embed_texts(self, *args, **kwargs) -> List[List[float]]:
-        """Runs the model to generate list of text embeddings.
-
-        Returns:
-            A list of list of float.
-        """
+    async def embed_texts(self, *args, **kwargs) -> List[List[float]]:
+        """Runs the model to generate a list of text embeddings (async)."""
         pass
 
     @abstractmethod

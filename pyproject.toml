@@ -23,8 +23,5 @@ litellm = ["litellm"]
 [tool.setuptools.packages.find]
 include = ["agenteval*"]
 
-[tool.setuptools.package-data]
-agenteval = ["templates/metrics/templates.json"]
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

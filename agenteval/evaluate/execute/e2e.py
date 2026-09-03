@@ -32,54 +32,24 @@ def _handle_missing_params(
     raise
 
 
-def _run_metric_sync(
+async def _run_metric(
     metric: BaseMetric,
     test_case: Union[LLMTestCase, ConversationalTestCase],
     ec: ErrorConfig,
 ) -> bool:
-    """Run ``metric.measure`` with deepeval's faithful error handling.
+    """Run ``await metric.measure`` with error handling.
 
     Returns ``True`` if the metric was skipped (caller must NOT emit
     :class:`MetricData` for it), ``False`` otherwise.
     """
     try:
-        metric.measure(test_case, _show_indicator=False)
+        await metric.measure(test_case, _show_indicator=False)
     except MissingTestCaseParamsError as e:
         return _handle_missing_params(metric, e, ec)
     except TypeError:
         # Some metrics don't accept ``_show_indicator``; retry without it.
         try:
-            metric.measure(test_case)
-        except MissingTestCaseParamsError as e:
-            return _handle_missing_params(metric, e, ec)
-        except Exception as e:
-            if ec.ignore_errors:
-                metric.error = str(e)
-                metric.success = False
-            else:
-                raise
-    except Exception as e:
-        if ec.ignore_errors:
-            metric.error = str(e)
-            metric.success = False
-        else:
-            raise
-    return False
-
-
-async def _run_metric_async(
-    metric: BaseMetric,
-    test_case: Union[LLMTestCase, ConversationalTestCase],
-    ec: ErrorConfig,
-) -> bool:
-    """Async twin of :func:`_run_metric_sync`. Returns ``True`` if skipped."""
-    try:
-        await metric.a_measure(test_case, _show_indicator=False)
-    except MissingTestCaseParamsError as e:
-        return _handle_missing_params(metric, e, ec)
-    except TypeError:
-        try:
-            await metric.a_measure(test_case)
+            await metric.measure(test_case)
         except MissingTestCaseParamsError as e:
             return _handle_missing_params(metric, e, ec)
         except Exception as e:
@@ -143,56 +113,53 @@ def _build_api_test_case(test_case: LLMTestCase, index: int) -> LLMApiTestCase:
     )
 
 
-def execute_test_cases(
-    test_cases: List[LLMTestCase],
-    metrics: List[BaseMetric],
-    error_config: ErrorConfig,
-) -> List:
-    """Synchronous engine: deep-copy metrics per case, run ``measure``,
-    accumulate :class:`MetricData` on the api test case, build a
-    :class:`TestResult` per case."""
-    test_results = []
-    for idx, tc in enumerate(test_cases):
-        # Fresh copies per case so parallel/sequential cases never share
-        # mutable metric state (score/success/error/...).
-        metrics_copy = copy_metrics(metrics)
-        api_tc = _build_api_test_case(tc, idx)
-        for metric in metrics_copy:
-            skipped = _run_metric_sync(metric, tc, error_config)
-            if skipped:
-                # Skipped metrics emit no MetricData (matches deepeval's
-                # `if res == "skip": continue`).
-                continue
-            api_tc.update_metric_data(create_metric_data(metric))
-        test_results.append(create_test_result(api_tc))
-    return test_results
-
-
-async def a_execute_test_cases(
+async def execute_test_cases(
     test_cases: List[LLMTestCase],
     metrics: List[BaseMetric],
     async_config: AsyncConfig,
     error_config: ErrorConfig,
 ) -> List:
-    """Async engine: cases run concurrently (bounded by ``max_concurrent``);
-    within a case, metrics run concurrently on distinct copied instances."""
-    sem = asyncio.Semaphore(async_config.max_concurrent)
+    """Run ``measure`` over every case/metric and build a :class:`TestResult`
+    per case.
 
-    async def run_one(idx: int, tc: LLMTestCase):
-        async with sem:
-            metrics_copy = copy_metrics(metrics)
-            api_tc = _build_api_test_case(tc, idx)
-            # Each copied metric is a distinct instance, so running them
-            # concurrently on the same test case is safe.
-            skip_flags = await asyncio.gather(
-                *[_run_metric_async(m, tc, error_config) for m in metrics_copy]
-            )
-            for metric, skipped in zip(metrics_copy, skip_flags):
-                if skipped:
-                    continue
-                api_tc.update_metric_data(create_metric_data(metric))
-            return create_test_result(api_tc)
+    When ``async_config.run_async`` is set, cases run concurrently (bounded by
+    ``max_concurrent``) and metrics within a case run concurrently on distinct
+    copied instances; otherwise cases and metrics run sequentially. Metrics are
+    deep-copied per case so cases never share mutable metric state.
+    """
+    if async_config.run_async:
+        sem = asyncio.Semaphore(async_config.max_concurrent)
 
-    return await asyncio.gather(
-        *[run_one(i, tc) for i, tc in enumerate(test_cases)]
-    )
+        async def run_one(idx: int, tc: LLMTestCase):
+            async with sem:
+                metrics_copy = copy_metrics(metrics)
+                api_tc = _build_api_test_case(tc, idx)
+                # Each copied metric is a distinct instance, so running them
+                # concurrently on the same test case is safe.
+                skip_flags = await asyncio.gather(
+                    *[_run_metric(m, tc, error_config) for m in metrics_copy]
+                )
+                for metric, skipped in zip(metrics_copy, skip_flags):
+                    if skipped:
+                        # Skipped metrics emit no MetricData (matches
+                        # deepeval's `if res == "skip": continue`).
+                        continue
+                    api_tc.update_metric_data(create_metric_data(metric))
+                return create_test_result(api_tc)
+
+        return await asyncio.gather(
+            *[run_one(i, tc) for i, tc in enumerate(test_cases)]
+        )
+
+    # Sequential path
+    test_results = []
+    for idx, tc in enumerate(test_cases):
+        metrics_copy = copy_metrics(metrics)
+        api_tc = _build_api_test_case(tc, idx)
+        for metric in metrics_copy:
+            skipped = await _run_metric(metric, tc, error_config)
+            if skipped:
+                continue
+            api_tc.update_metric_data(create_metric_data(metric))
+        test_results.append(create_test_result(api_tc))
+    return test_results

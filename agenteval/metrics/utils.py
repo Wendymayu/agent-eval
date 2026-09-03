@@ -390,7 +390,7 @@ def verdict_from_json(
     return verdict_cls(verdict=leading, reason=data.get("reason"))
 
 
-def generate_with_schema_and_extract(
+async def generate_with_schema_and_extract(
     metric: Union[BaseMetric, BaseConversationalMetric],
     prompt: Any,
     schema_cls: Type[SchemaType],
@@ -399,42 +399,19 @@ def generate_with_schema_and_extract(
     extract_json: Callable[[Dict[str, Any]], ReturnType],
 ) -> ReturnType:
     """
-    Synchronous wrapper:
-    - calls model.generate_with_schema(...)
-    - accrues cost if applicable
-    - if schema instance -> extract_schema
-      else parse JSON -> extract_json
+    Calls ``model.generate_with_schema(...)`` (async), accrues cost when the
+    model returns one, then either applies ``extract_schema`` (when the model
+    returned a parsed schema instance) or parses JSON and applies
+    ``extract_json``.
     """
     if metric.using_native_model:
-        result, cost = metric.model.generate_with_schema(
+        result, cost = await metric.model.generate_with_schema(
             prompt, schema=schema_cls
         )
         metric._accrue_cost(cost)
         accrue_token_usage(metric, cost)
     else:
-        result = metric.model.generate_with_schema(prompt, schema=schema_cls)
-    if isinstance(result, schema_cls):
-        return extract_schema(result)
-    data = trimAndLoadJson(result, metric)
-    return extract_json(data)
-
-
-async def a_generate_with_schema_and_extract(
-    metric: Union[BaseMetric, BaseConversationalMetric],
-    prompt: Any,
-    schema_cls: Type[SchemaType],
-    *,
-    extract_schema: Callable[[SchemaType], ReturnType],
-    extract_json: Callable[[Dict[str, Any]], ReturnType],
-) -> ReturnType:
-    if metric.using_native_model:
-        result, cost = await metric.model.a_generate_with_schema(
-            prompt, schema=schema_cls
-        )
-        metric._accrue_cost(cost)
-        accrue_token_usage(metric, cost)
-    else:
-        result = await metric.model.a_generate_with_schema(
+        result = await metric.model.generate_with_schema(
             prompt, schema=schema_cls
         )
 

@@ -25,14 +25,11 @@ class GEvalMock(DeepEvalBaseLLM):
     def get_model_name(self, *a, **k):
         return "gmock"
 
-    def generate(self, prompt, schema=None):
+    async def generate(self, prompt, schema=None):
         self._calls += 1
         if self._calls == 1:
             return gschema.Steps(steps=["Compare actual to expected"]), EvaluationCost(0.0, 5, 5)
         return gschema.ReasonScore(score=4, reason="correct"), EvaluationCost(0.0, 8, 8)
-
-    async def a_generate(self, prompt, schema=None):
-        return self.generate(prompt, schema)
 
 
 def test_public_api_exports():
@@ -47,7 +44,6 @@ def test_e2e_geval_evaluate_with_mock_model():
         evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
         model=GEvalMock(),
         threshold=0.5,
-        async_mode=False,
     )
     cases = [
         LLMTestCase(input="2+2=?", actual_output="4", expected_output="4"),

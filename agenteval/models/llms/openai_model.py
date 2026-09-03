@@ -4,10 +4,7 @@ from typing import Any, Optional, Tuple, Union, Dict, List
 import warnings
 from agenteval.test_case import MLLMImage
 from pydantic import BaseModel, SecretStr
-from openai import (
-    OpenAI,
-    AsyncOpenAI,
-)
+from openai import AsyncOpenAI
 
 from agenteval.errors import AgentEvalError
 from agenteval.utils import check_if_multimodal, convert_to_multi_modal_array
@@ -144,76 +141,10 @@ class OpenAIModel(DeepEvalBaseLLM):
     # Generate functions #
     ######################
 
-    def generate(
+    async def generate(
         self, prompt: str, schema: Optional[BaseModel] = None
     ) -> Tuple[Union[str, BaseModel], float]:
-        client = self.load_model(async_mode=False)
-
-        if check_if_multimodal(prompt):
-            prompt = convert_to_multi_modal_array(input=prompt)
-            content = self.generate_content(prompt)
-        else:
-            content = [{"type": "text", "text": prompt}]
-
-        messages = [{"role": "user", "content": content}]
-
-        if schema:
-            if self.supports_structured_outputs() is True:
-                completion = client.beta.chat.completions.parse(
-                    model=self.name,
-                    messages=messages,
-                    response_format=schema,
-                    temperature=self.temperature,
-                    **self.generation_kwargs,
-                )
-                structured_output: BaseModel = completion.choices[
-                    0
-                ].message.parsed
-                cost = self.calculate_cost(
-                    completion.usage.prompt_tokens,
-                    completion.usage.completion_tokens,
-                )
-                self._update_llm_span_from_completion(completion, messages)
-                return structured_output, cost
-            if self.supports_json_mode() is True:
-                completion = client.beta.chat.completions.parse(
-                    model=self.name,
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                    temperature=self.temperature,
-                    **self.generation_kwargs,
-                )
-                json_output = trim_and_load_json(
-                    completion.choices[0].message.content
-                )
-                cost = self.calculate_cost(
-                    completion.usage.prompt_tokens,
-                    completion.usage.completion_tokens,
-                )
-                self._update_llm_span_from_completion(completion, messages)
-                return schema.model_validate(json_output), cost
-
-        completion = client.chat.completions.create(
-            model=self.name,
-            messages=messages,
-            temperature=self.temperature,
-            **self.generation_kwargs,
-        )
-        output = completion.choices[0].message.content
-        cost = self.calculate_cost(
-            completion.usage.prompt_tokens, completion.usage.completion_tokens
-        )
-        self._update_llm_span_from_completion(completion, messages)
-        if schema:
-            json_output = trim_and_load_json(output)
-            return schema.model_validate(json_output), cost
-        else:
-            return output, cost
-
-    async def a_generate(
-        self, prompt: str, schema: Optional[BaseModel] = None
-    ) -> Tuple[Union[str, BaseModel], float]:
-        client = self.load_model(async_mode=True)
+        client = self.load_model()
 
         if check_if_multimodal(prompt):
             prompt = convert_to_multi_modal_array(input=prompt)
@@ -287,7 +218,7 @@ class OpenAIModel(DeepEvalBaseLLM):
 
         return min(top_logprobs, max_log_probs)
 
-    def generate_raw_response(
+    async def generate_raw_response(
         self,
         prompt: str,
         top_logprobs: int = 5,
@@ -303,45 +234,7 @@ class OpenAIModel(DeepEvalBaseLLM):
             )
 
         top_logprobs = self._cap_top_logprobs(top_logprobs)
-        client = self.load_model(async_mode=False)
-        if is_multimodal:
-            prompt = convert_to_multi_modal_array(input=prompt)
-            content = self.generate_content(prompt)
-        else:
-            content = [{"type": "text", "text": prompt}]
-        messages = [{"role": "user", "content": content}]
-        completion = client.chat.completions.create(
-            model=self.name,
-            messages=messages,
-            temperature=self.temperature,
-            logprobs=True,
-            top_logprobs=top_logprobs,
-            **self.generation_kwargs,
-        )
-        input_tokens = completion.usage.prompt_tokens
-        output_tokens = completion.usage.completion_tokens
-        cost = self.calculate_cost(input_tokens, output_tokens)
-        self._update_llm_span_from_completion(completion, messages)
-
-        return completion, cost
-
-    async def a_generate_raw_response(
-        self,
-        prompt: str,
-        top_logprobs: int = 5,
-    ) -> Tuple[ChatCompletion, float]:
-        model_name = self.name
-        is_multimodal = check_if_multimodal(prompt)
-
-        if self.supports_log_probs() is False:
-            raise AgentEvalError(
-                f"Model `{model_name}` does not support `logprobs` / `top_logprobs`. "
-                "Please use a different OpenAI model (for example `gpt-4.1` or `gpt-4o`) "
-                "when calling `a_generate_raw_response`."
-            )
-
-        top_logprobs = self._cap_top_logprobs(top_logprobs)
-        client = self.load_model(async_mode=True)
+        client = self.load_model()
         if is_multimodal:
             prompt = convert_to_multi_modal_array(input=prompt)
             content = self.generate_content(prompt)
@@ -363,17 +256,17 @@ class OpenAIModel(DeepEvalBaseLLM):
 
         return completion, cost
 
-    def generate_samples(
+    async def generate_samples(
         self, prompt: str, n: int, temperature: float
     ) -> list[str]:
-        client = self.load_model(async_mode=False)
+        client = self.load_model()
         if check_if_multimodal(prompt):
             prompt = convert_to_multi_modal_array(input=prompt)
             content = self.generate_content(prompt)
         else:
             content = [{"type": "text", "text": prompt}]
         messages = [{"role": "user", "content": content}]
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=self.name,
             messages=messages,
             n=n,
@@ -460,9 +353,7 @@ class OpenAIModel(DeepEvalBaseLLM):
                     )
         return content
 
-    def load_model(self, async_mode: bool = False):
-        if not async_mode:
-            return self._build_client(OpenAI)
+    def load_model(self):
         return self._build_client(AsyncOpenAI)
 
     def _client_kwargs(self) -> Dict:

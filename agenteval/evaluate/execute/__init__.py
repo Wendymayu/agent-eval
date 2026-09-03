@@ -1,6 +1,3 @@
-from agenteval.evaluate.execute.e2e import (
-    execute_test_cases,
-    a_execute_test_cases,
-)
+from agenteval.evaluate.execute.e2e import execute_test_cases
 
-__all__ = ["execute_test_cases", "a_execute_test_cases"]
+__all__ = ["execute_test_cases"]

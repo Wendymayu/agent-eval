@@ -8,46 +8,39 @@ from agenteval.test_case import (
     ConversationalTestCase,
     SingleTurnParams,
 )
-from agenteval.templates.resolver import (
-    MetricTemplateMethod,
-    resolve_template,
-)
-from agenteval.templates.template_class import filter_template_kwargs
+from agenteval.templates.render import filter_template_kwargs
 
 if TYPE_CHECKING:
     from agenteval.models import DeepEvalBaseLLM
 
 
 class PromptMixin:
-    """Renders a metric prompt template. `template_class` overrides the default
-    `self.__class__.__name__` when borrowing another class's templates."""
+    """Renders a metric prompt via the metric's ``evaluation_template``.
+
+    Each metric sets ``evaluation_template`` to a Template class whose
+    ``staticmethod`` methods return a rendered Jinja2 prompt. Subclass the
+    Template and override any method to customize that single prompt only.
+    """
 
     def _get_prompt(
         self,
-        method: MetricTemplateMethod,
+        method: str,
         *,
-        template_class: Optional[str] = None,
         multimodal: bool = False,
         strict: bool = True,
         **kwargs,
     ) -> str:
         context = {**kwargs, "multimodal": multimodal, "strict": strict}
-
-        # An explicit `template_class` borrows another class's templates, so an
-        # `evaluation_template` set for this metric must not hijack it.
-        if template_class is None:
-            render = getattr(
-                getattr(self, "evaluation_template", None), method, None
-            )
-            if render is not None:
-                return render(**filter_template_kwargs(render, context))
-
-        return resolve_template(
-            "metrics",
-            template_class or self.__class__.__name__,
-            method,
-            **context,
+        render = getattr(
+            getattr(self, "evaluation_template", None), method, None
         )
+        if render is None:
+            raise ValueError(
+                f"No prompt method `{method}` on "
+                f"{self.__class__.__name__}'s evaluation_template; set "
+                f"`evaluation_template` to a Template class that defines it."
+            )
+        return render(**filter_template_kwargs(render, context))
 
 
 class BaseMetric(PromptMixin):
@@ -59,7 +52,6 @@ class BaseMetric(PromptMixin):
     success: Optional[bool] = None
     evaluation_model: Optional[str] = None
     strict_mode: bool = False
-    async_mode: bool = True
     verbose_mode: bool = True
     include_reason: bool = False
     error: Optional[str] = None
@@ -77,14 +69,8 @@ class BaseMetric(PromptMixin):
         super().__init_subclass__(**kwargs)
 
     @abstractmethod
-    def measure(self, test_case: LLMTestCase, *args, **kwargs) -> float:
+    async def measure(self, test_case: LLMTestCase, *args, **kwargs) -> float:
         raise NotImplementedError
-
-    @abstractmethod
-    async def a_measure(self, test_case: LLMTestCase, *args, **kwargs) -> float:
-        raise NotImplementedError(
-            f"Async execution for {self.__class__.__name__} not supported yet. Please set 'async_mode' to 'False'."
-        )
 
     def is_successful(self) -> Optional[bool]:
         if self.threshold is None:
@@ -128,7 +114,6 @@ class BaseConversationalMetric(PromptMixin):
     success: Optional[bool] = None
     evaluation_model: Optional[str] = None
     strict_mode: bool = False
-    async_mode: bool = True
     verbose_mode: bool = True
     include_reason: bool = False
     error: Optional[str] = None
@@ -145,18 +130,10 @@ class BaseConversationalMetric(PromptMixin):
         super().__init_subclass__(**kwargs)
 
     @abstractmethod
-    def measure(
+    async def measure(
         self, test_case: ConversationalTestCase, *args, **kwargs
     ) -> float:
         raise NotImplementedError
-
-    @abstractmethod
-    async def a_measure(
-        self, test_case: ConversationalTestCase, *args, **kwargs
-    ) -> float:
-        raise NotImplementedError(
-            f"Async execution for {self.__class__.__name__} not supported yet. Please set 'async_mode' to 'False'."
-        )
 
     def is_successful(self) -> Optional[bool]:
         if self.threshold is None:

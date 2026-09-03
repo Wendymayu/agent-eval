@@ -6,14 +6,13 @@ from agenteval.test_case import (
     LLMTestCase,
     SingleTurnParams,
 )
-from agenteval.utils import get_or_create_event_loop, prettify_list
+from agenteval.utils import prettify_list
 from agenteval.metrics.utils import (
     construct_verbose_logs,
     trimAndLoadJson,
     initialize_model,
     check_llm_test_case_params,
     generate_with_schema_and_extract,
-    a_generate_with_schema_and_extract,
     accrue_token_usage,
 )
 from agenteval.models import DeepEvalBaseLLM
@@ -32,10 +31,7 @@ from agenteval.metrics.g_eval.utils import (
     get_score_range,
     ensure_required_params,
 )
-from agenteval.templates import make_template_class
-
-
-GEvalTemplate = make_template_class("GEval")
+from agenteval.metrics.g_eval.template import GEvalTemplate
 
 
 class GEval(BaseMetric):
@@ -49,7 +45,6 @@ class GEval(BaseMetric):
         model: Optional[Union[str, DeepEvalBaseLLM]] = None,
         threshold: Optional[float] = 0.5,
         top_logprobs: int = 20,
-        async_mode: bool = True,
         strict_mode: bool = False,
         verbose_mode: bool = False,
         _include_g_eval_suffix: bool = True,
@@ -78,83 +73,12 @@ class GEval(BaseMetric):
         self.threshold = 1 if strict_mode else threshold
         self.top_logprobs = top_logprobs
         self.strict_mode = strict_mode
-        self.async_mode = async_mode
         self.verbose_mode = verbose_mode
         self.flaky = flaky
         self._include_g_eval_suffix = _include_g_eval_suffix
         self.evaluation_template = evaluation_template
 
-    def measure(
-        self,
-        test_case: LLMTestCase,
-        _show_indicator: bool = True,
-        _in_component: bool = False,
-        _additional_context: Optional[str] = None,
-    ) -> float:
-
-        ensure_required_params(
-            self.evaluation_params, self.criteria, self.evaluation_steps
-        )
-        multimodal = test_case.multimodal
-
-        check_llm_test_case_params(
-            test_case,
-            self.evaluation_params,
-            None,
-            None,
-            self,
-            self.model,
-            multimodal,
-        )
-
-        self.evaluation_cost = 0 if self.using_native_model else None
-        self.input_tokens = 0 if self.using_native_model else None
-        self.output_tokens = 0 if self.using_native_model else None
-
-        with metric_progress_indicator(
-            self, _show_indicator=_show_indicator, _in_component=_in_component
-        ):
-            if self.async_mode:
-                loop = get_or_create_event_loop()
-                coro = self.a_measure(
-                    test_case,
-                    _show_indicator=False,
-                    _in_component=_in_component,
-                    _additional_context=_additional_context,
-                )
-                loop.run_until_complete(coro)
-            else:
-                self.evaluation_steps: List[str] = (
-                    self._generate_evaluation_steps(multimodal)
-                )
-                g_score, reason = self._evaluate(
-                    test_case,
-                    _additional_context=_additional_context,
-                    multimodal=multimodal,
-                )
-                self.score = (
-                    (float(g_score) - self.score_range[0])
-                    / self.score_range_span
-                    if not self.strict_mode
-                    else int(g_score)
-                )
-                self.success = self.is_successful()
-
-                self.reason = reason
-                self.verbose_logs = construct_verbose_logs(
-                    self,
-                    steps=[
-                        f"Criteria:\n{self.criteria}",
-                        f"Evaluation Steps:\n{prettify_list(self.evaluation_steps)}",
-                        f"Rubric:\n{format_rubrics(self.rubric)}",
-                        f"Score: {self.score}",
-                        f"Reason: {self.reason}",
-                    ],
-                )
-
-            return self.score
-
-    async def a_measure(
+    async def measure(
         self,
         test_case: LLMTestCase,
         _show_indicator: bool = True,
@@ -182,14 +106,13 @@ class GEval(BaseMetric):
         self.output_tokens = 0 if self.using_native_model else None
         with metric_progress_indicator(
             self,
-            async_mode=True,
             _show_indicator=_show_indicator,
             _in_component=_in_component,
         ):
             self.evaluation_steps: List[str] = (
-                await self._a_generate_evaluation_steps(multimodal)
+                await self._generate_evaluation_steps(multimodal)
             )
-            g_score, reason = await self._a_evaluate(
+            g_score, reason = await self._evaluate(
                 test_case,
                 _additional_context=_additional_context,
                 multimodal=multimodal,
@@ -214,7 +137,7 @@ class GEval(BaseMetric):
             )
             return self.score
 
-    async def _a_generate_evaluation_steps(self, multimodal: bool) -> List[str]:
+    async def _generate_evaluation_steps(self, multimodal: bool) -> List[str]:
         if self.evaluation_steps:
             return self.evaluation_steps
 
@@ -227,7 +150,7 @@ class GEval(BaseMetric):
             parameters=g_eval_params_str,
             multimodal=multimodal,
         )
-        return await a_generate_with_schema_and_extract(
+        return await generate_with_schema_and_extract(
             metric=self,
             prompt=prompt,
             schema_cls=gschema.Steps,
@@ -235,28 +158,7 @@ class GEval(BaseMetric):
             extract_json=lambda d: d["steps"],
         )
 
-    def _generate_evaluation_steps(self, multimodal: bool) -> List[str]:
-        if self.evaluation_steps:
-            return self.evaluation_steps
-
-        g_eval_params_str = construct_g_eval_params_string(
-            self.evaluation_params
-        )
-        prompt = self._get_prompt(
-            "generate_evaluation_steps",
-            criteria=self.criteria,
-            parameters=g_eval_params_str,
-            multimodal=multimodal,
-        )
-        return generate_with_schema_and_extract(
-            metric=self,
-            prompt=prompt,
-            schema_cls=gschema.Steps,
-            extract_schema=lambda s: s.steps,
-            extract_json=lambda d: d["steps"],
-        )
-
-    async def _a_evaluate(
+    async def _evaluate(
         self,
         test_case: LLMTestCase,
         multimodal: bool,
@@ -296,7 +198,7 @@ class GEval(BaseMetric):
 
             # Don't have to check for using native model
             # since generate raw response only exist for deepeval's native model
-            res, cost = await self.model.a_generate_raw_response(
+            res, cost = await self.model.generate_raw_response(
                 prompt, top_logprobs=self.top_logprobs
             )
 
@@ -318,77 +220,8 @@ class GEval(BaseMetric):
             except (KeyError, AttributeError, TypeError, ValueError):
                 return score, reason
         except AttributeError:
-            # This catches the case where a_generate_raw_response doesn't exist.
-            return await a_generate_with_schema_and_extract(
-                metric=self,
-                prompt=prompt,
-                schema_cls=gschema.ReasonScore,
-                extract_schema=lambda s: (s.score, s.reason),
-                extract_json=lambda d: (d["score"], d["reason"]),
-            )
-
-    def _evaluate(
-        self,
-        test_case: LLMTestCase,
-        multimodal: bool,
-        _additional_context: Optional[str] = None,
-    ) -> Tuple[Union[int, float], str]:
-        test_case_content = construct_test_case_string(
-            self.evaluation_params, test_case
-        )
-        g_eval_params_str = construct_g_eval_params_string(
-            self.evaluation_params
-        )
-
-        if not self.strict_mode:
-            rubric_str = format_rubrics(self.rubric) if self.rubric else None
-            prompt = self._get_prompt(
-                "generate_evaluation_results",
-                evaluation_steps=number_evaluation_steps(self.evaluation_steps),
-                test_case_content=test_case_content,
-                parameters=g_eval_params_str,
-                rubric=rubric_str,
-                score_range=self.score_range,
-                _additional_context=_additional_context,
-                multimodal=multimodal,
-            )
-        else:
-            prompt = self._get_prompt(
-                "generate_strict_evaluation_results",
-                evaluation_steps=number_evaluation_steps(self.evaluation_steps),
-                test_case_content=test_case_content,
-                parameters=g_eval_params_str,
-                _additional_context=_additional_context,
-                multimodal=multimodal,
-            )
-
-        try:
-            # don't use log probabilities for unsupported gpt models
-            if no_log_prob_support(self.model):
-                raise AttributeError("log_probs unsupported.")
-
-            res, cost = self.model.generate_raw_response(
-                prompt, top_logprobs=self.top_logprobs
-            )
-            self._accrue_cost(cost)
-            accrue_token_usage(self, cost)
-            data = trimAndLoadJson(res.choices[0].message.content, self)
-
-            reason = data["reason"]
-            score = data["score"]
-            if self.strict_mode:
-                return score, reason
-
-            try:
-                weighted_summed_score = calculate_weighted_summed_score(
-                    score, res
-                )
-                return weighted_summed_score, reason
-            except (KeyError, AttributeError, TypeError, ValueError):
-                return score, reason
-        except AttributeError:
-            # This catches the case where a_generate_raw_response doesn't exist.
-            return generate_with_schema_and_extract(
+            # This catches the case where generate_raw_response doesn't exist.
+            return await generate_with_schema_and_extract(
                 metric=self,
                 prompt=prompt,
                 schema_cls=gschema.ReasonScore,

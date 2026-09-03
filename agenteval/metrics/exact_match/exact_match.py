@@ -26,7 +26,7 @@ class ExactMatchMetric(BaseMetric):
         self.verbose_mode = verbose_mode
         self.flaky = flaky
 
-    def measure(
+    async def measure(
         self,
         test_case: LLMTestCase,
         _show_indicator: bool = True,
@@ -69,18 +69,6 @@ class ExactMatchMetric(BaseMetric):
                 )
 
             return self.score
-
-    async def a_measure(
-        self,
-        test_case: LLMTestCase,
-        _show_indicator: bool = True,
-        _in_component: bool = False,
-    ) -> float:
-        return self.measure(
-            test_case,
-            _show_indicator=_show_indicator,
-            _in_component=_in_component,
-        )
 
     @property
     def __name__(self):

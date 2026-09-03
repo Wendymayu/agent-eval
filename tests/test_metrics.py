@@ -7,33 +7,27 @@ from agenteval.models import DeepEvalBaseLLM, EvaluationCost
 from agenteval.metrics.g_eval import schema as gschema
 
 
-def test_exact_match_pass():
+async def test_exact_match_pass():
     m = ExactMatchMetric(threshold=0.5)
-    m.measure(LLMTestCase(input="q", actual_output="4", expected_output="4"))
+    await m.measure(LLMTestCase(input="q", actual_output="4", expected_output="4"))
     assert m.score == 1.0
     assert m.is_successful() is True
 
 
-def test_exact_match_fail():
+async def test_exact_match_fail():
     m = ExactMatchMetric(threshold=0.5)
-    m.measure(LLMTestCase(input="q", actual_output="5", expected_output="4"))
+    await m.measure(LLMTestCase(input="q", actual_output="5", expected_output="4"))
     assert m.score == 0.0
     assert m.is_successful() is False
 
 
-def test_geval_scores_with_mock_model():
-    # GEval's a_measure path: _a_generate_evaluation_steps + _a_evaluate both
-    # call a_generate_with_schema_and_extract, which (unlike the sync extract)
-    # unpacks the (instance, EvaluationCost) tuples this mock returns. The
-    # _a_evaluate logprobs path raises AttributeError on the missing
-    # a_generate_raw_response and falls back to the schema call, so exactly two
-    # model calls happen: first Steps, then ReasonScore.
-    #
-    # NOTE: async_mode=True (the default) runs a_measure via
-    # loop.run_until_complete. The sync path (async_mode=False) does NOT unpack
-    # (instance, cost) tuples, so a tuple-returning mock must use the async
-    # path. get_or_create_event_loop applies nest_asyncio when a loop is
-    # already running, so this works under pytest-asyncio's auto mode.
+async def test_geval_scores_with_mock_model():
+    # GEval's measure path: _generate_evaluation_steps + _evaluate both call
+    # generate_with_schema_and_extract, which unpacks the (instance,
+    # EvaluationCost) tuples this mock returns. The _evaluate logprobs path
+    # raises AttributeError on the missing generate_raw_response and falls back
+    # to the schema call, so exactly two model calls happen: first Steps, then
+    # ReasonScore.
     class GEvalMock(DeepEvalBaseLLM):
         def __init__(self):
             self._calls = 0
@@ -45,7 +39,7 @@ def test_geval_scores_with_mock_model():
         def get_model_name(self, *a, **k):
             return "gmock"
 
-        def generate(self, prompt, schema=None):
+        async def generate(self, prompt, schema=None):
             self._calls += 1
             if self._calls == 1:
                 return (
@@ -57,18 +51,14 @@ def test_geval_scores_with_mock_model():
                 EvaluationCost(0.0, 8, 8),
             )
 
-        async def a_generate(self, prompt, schema=None):
-            return self.generate(prompt, schema)
-
     g = GEval(
         name="correctness",
         criteria="is the answer correct",
         evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
         model=GEvalMock(),
-        async_mode=True,
     )
     tc = LLMTestCase(input="q", actual_output="4", expected_output="4")
-    g.measure(tc)
+    await g.measure(tc)
     # score_range defaults to (0, 10) when no rubric is set, so a raw score of 3
     # normalises to 0.3.
     assert g.score is not None

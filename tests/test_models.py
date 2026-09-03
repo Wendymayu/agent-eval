@@ -19,13 +19,10 @@ class MockModel(DeepEvalBaseLLM):
     def get_model_name(self, *args, **kwargs) -> str:
         return "mock-model"
 
-    def generate(self, prompt: str, schema: Optional[BaseModel] = None) -> Tuple[Union[str, BaseModel], float]:
+    async def generate(self, prompt: str, schema: Optional[BaseModel] = None) -> Tuple[Union[str, BaseModel], float]:
         if schema is not None and self._schema_out is not None:
             return self._schema_out, EvaluationCost(self._cost, 10, 20)
         return self._output, EvaluationCost(self._cost, 10, 20)
-
-    async def a_generate(self, prompt: str, schema: Optional[BaseModel] = None) -> Tuple[Union[str, BaseModel], float]:
-        return self.generate(prompt, schema)
 
 
 def test_mock_model_is_deepeval_base_llm():
@@ -33,9 +30,9 @@ def test_mock_model_is_deepeval_base_llm():
     assert isinstance(m, DeepEvalBaseLLM)
 
 
-def test_mock_model_generate_contract():
+async def test_mock_model_generate_contract():
     m = MockModel(output="hello")
-    out, cost = m.generate("hi")
+    out, cost = await m.generate("hi")
     assert out == "hello"
     assert cost.input_tokens == 10
     assert cost.output_tokens == 20

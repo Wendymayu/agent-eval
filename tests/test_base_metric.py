@@ -6,13 +6,10 @@ class PassMetric(BaseMetric):
     def __init__(self, threshold=0.5):
         self.threshold = threshold
 
-    def measure(self, test_case, *args, **kwargs):
+    async def measure(self, test_case, *args, **kwargs):
         self.score = 1.0
         self.success = self.is_successful()
         return self.score
-
-    async def a_measure(self, test_case, *args, **kwargs):
-        return self.measure(test_case)
 
 
 def test_subclass_does_not_require_tracing():
@@ -21,13 +18,13 @@ def test_subclass_does_not_require_tracing():
     assert m.__name__ == "Base Metric"
 
 
-def test_is_successful_threshold_logic():
+async def test_is_successful_threshold_logic():
     m = PassMetric(threshold=0.5)
-    m.measure(LLMTestCase(input="x"))
+    await m.measure(LLMTestCase(input="x"))
     assert m.is_successful() is True
 
     m2 = PassMetric(threshold=1.5)
-    m2.measure(LLMTestCase(input="x"))
+    await m2.measure(LLMTestCase(input="x"))
     assert m2.is_successful() is False  # 1.0 >= 1.5 is False
 
 
