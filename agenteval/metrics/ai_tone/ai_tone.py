@@ -1,16 +1,16 @@
 """AI tone (AI-flavor) metric.
 
-An LLM-judge that scores how strongly ``actual_output`` reads as
+An LLM-judge that decides whether ``actual_output`` reads as
 machine-generated — its "AI flavor": templated transitions (首先/其次/最后),
 boilerplate (综上所述/值得注意的是), inflated wording, hollow summaries,
-and unnatural evenness. The judge returns a single 0-1 score plus a reason
-(single LLM call).
+and unnatural evenness. The judge returns a *binary 0/1 verdict* plus a reason
+(single LLM call): 1 = reads as AI-generated, 0 = reads as naturally human.
 
-Score direction is inverted vs. most metrics: ``score`` is the *AI-flavor
-density* (0.0 = reads as naturally human, 1.0 = saturated with AI tone), so
-higher is *worse*. ``is_successful`` is overridden so a case passes when
-``score <= threshold`` — i.e. ``threshold`` is the tolerable AI-flavor ceiling,
-not a bar to clear.
+Score direction is inverted vs. most metrics: ``1`` means AI-flavored (bad),
+``0`` means natural (good), so higher is *worse*. ``is_successful`` is
+overridden so a case passes when ``score <= threshold``. The threshold is
+fixed at the coerce midpoint (0.5) and not user-tunable — tuning a 0/1 score
+is a no-op — so ``1`` fails and ``0`` passes.
 """
 
 from typing import List, Optional, Tuple, Type
@@ -36,12 +36,16 @@ class AIToneMetric(BaseMetric):
     def __init__(
         self,
         model: Optional[str] = None,
-        threshold: float = 0.5,
         verbose_mode: bool = False,
         flaky: bool = False,
         evaluation_template: Type[AIToneTemplate] = AIToneTemplate,
     ):
-        self.threshold = threshold
+        # Binary verdict: the decision boundary is fixed at the coerce
+        # midpoint (0.5) — not user-tunable, since tuning a 0/1 score is a
+        # no-op. Kept non-None so the framework's "verdict-capable" signal
+        # (check_at_least_one_metric_has_threshold) still treats this metric
+        # as deciding pass/fail.
+        self.threshold = 0.5
         self.verbose_mode = verbose_mode
         self.flaky = flaky
         self.evaluation_template = evaluation_template
@@ -92,14 +96,16 @@ class AIToneMetric(BaseMetric):
             return self.score
 
     def _set_result(self, score: float, reason: str) -> None:
-        self.score = float(score)
+        # Binary verdict: coerce whatever the judge returned to {0.0, 1.0} so
+        # the score contract holds even if the judge slips a non-binary value.
+        self.score = 1.0 if score >= 0.5 else 0.0
         self.reason = reason
         self.success = self.is_successful()
         if self.verbose_mode:
             self.verbose_logs = construct_verbose_logs(
                 self,
                 steps=[
-                    f"Score: {self.score:.2f}",
+                    f"Score: {self.score:.0f}",
                     f"Reason: {self.reason}",
                 ],
             )

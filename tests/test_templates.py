@@ -130,6 +130,7 @@ def test_answer_relevance_renders():
     assert "what is 2+2" in out  # interpolated input value
     assert "4" in out  # interpolated actual_output value
     assert "多模态输入规则" not in out
+    assert "只返回 1 或 0" in out  # strict binary scoring instruction
 
 
 def test_answer_relevance_multimodal_block():
@@ -148,6 +149,7 @@ def test_ai_tone_renders():
     )
     assert "首先，其次" in out  # interpolated actual_output value
     assert "AI 味" in out  # prompt prose
+    assert "只返回 1 或 0" in out  # strict binary scoring instruction
 
 
 # --- filter_template_kwargs ---

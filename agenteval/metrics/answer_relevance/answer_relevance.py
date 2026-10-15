@@ -1,8 +1,11 @@
 """Answer relevance metric.
 
-An LLM-judge that scores how relevant ``actual_output`` is to ``input``: does
-the output address what the input asks, or does it dodge / go off-topic? The
-judge returns a single 0-1 score plus a reason (single LLM call).
+An LLM-judge that decides whether ``actual_output`` is relevant to ``input``:
+does the output address what the input asks, or does it dodge / go off-topic?
+The judge returns a *binary 0/1 verdict* plus a reason (single LLM call):
+1 = relevant, 0 = not relevant. ``score >= threshold`` passes, where the
+threshold is fixed at the coerce midpoint (0.5) and not user-tunable — tuning
+a 0/1 score is a no-op.
 
 This is the minimal *direct-scoring* variant. The original deepeval
 ``AnswerRelevancyMetric`` algorithm — break the output into statements, emit a
@@ -37,12 +40,16 @@ class AnswerRelevanceMetric(BaseMetric):
     def __init__(
         self,
         model: Optional[str] = None,
-        threshold: float = 0.5,
         verbose_mode: bool = False,
         flaky: bool = False,
         evaluation_template: Type[AnswerRelevanceTemplate] = AnswerRelevanceTemplate,
     ):
-        self.threshold = threshold
+        # Binary verdict: the decision boundary is fixed at the coerce
+        # midpoint (0.5) — not user-tunable, since tuning a 0/1 score is a
+        # no-op. Kept non-None so the framework's "verdict-capable" signal
+        # (check_at_least_one_metric_has_threshold) still treats this metric
+        # as deciding pass/fail.
+        self.threshold = 0.5
         self.verbose_mode = verbose_mode
         self.flaky = flaky
         self.evaluation_template = evaluation_template
@@ -79,14 +86,16 @@ class AnswerRelevanceMetric(BaseMetric):
             return self.score
 
     def _set_result(self, score: float, reason: str) -> None:
-        self.score = float(score)
+        # Binary verdict: coerce whatever the judge returned to {0.0, 1.0} so
+        # the score contract holds even if the judge slips a non-binary value.
+        self.score = 1.0 if score >= 0.5 else 0.0
         self.reason = reason
         self.success = self.is_successful()
         if self.verbose_mode:
             self.verbose_logs = construct_verbose_logs(
                 self,
                 steps=[
-                    f"Score: {self.score:.2f}",
+                    f"Score: {self.score:.0f}",
                     f"Reason: {self.reason}",
                 ],
             )
